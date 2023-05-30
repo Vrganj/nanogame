@@ -1,24 +1,24 @@
 package main
 
 import (
-	"net"
-	"log"
-	"sync"
 	"bytes"
 	"encoding/json"
+	"log"
+	"net"
+	"sync"
 )
 
 type Player struct {
 	// do not change
-	conn net.Conn
+	conn  net.Conn
 	queue chan []byte
-	name string
+	name  string
 
-	x float64
-	y float64
-	z float64
-	yaw float32
-	pitch float32
+	x        float64
+	y        float64
+	z        float64
+	yaw      float32
+	pitch    float32
 	grounded bool
 }
 
@@ -48,7 +48,7 @@ func handleConnection(conn net.Conn) {
 			playersLock.Unlock()
 
 			var quitMessage bytes.Buffer
-			writeChatMessageRaw(&quitMessage, "\u00a78[\u00a7b-\u00a78] \u00a77" + player.name)
+			writeChatMessageRaw(&quitMessage, "\u00a78[\u00a7b-\u00a78] \u00a77"+player.name)
 			broadcastPacket(quitMessage.Bytes())
 		}
 	}()
@@ -60,7 +60,7 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	nextState := handshake[len(handshake) - 1]
+	nextState := handshake[len(handshake)-1]
 
 	if nextState == 1 {
 		// assume the packet is 0x00
@@ -81,15 +81,15 @@ func handleConnection(conn net.Conn) {
 
 		data := map[string]any{
 			"version": map[string]any{
-				"name": "1.8.8",
+				"name":     "1.8.8",
 				"protocol": 47,
 			},
 			"players": map[string]any{
 				"online": online,
-				"max": 69,
+				"max":    69,
 			},
 			"description": map[string]string{
-				"text": "sugma",
+				"text":  "sugma",
 				"color": "aqua",
 			},
 		}
@@ -158,7 +158,7 @@ func handleConnection(conn net.Conn) {
 	var bundle bytes.Buffer
 
 	writeLoginSuccess(&bundle, "d7bb14b6-bfe9-462f-bb00-85b91826381a", username)
-	writeJoinGame(&bundle, 123, 0, 0, 0, 69, "flat", false)
+	writeJoinGame(&bundle, 123, 1, 0, 0, 69, "flat", false)
 	writePositionLook(&bundle, 0, 64, 0, 0, 0, 0)
 
 	if _, err := bundle.WriteTo(conn); err != nil {
@@ -168,7 +168,7 @@ func handleConnection(conn net.Conn) {
 
 	// TESTING
 
-	writeEmptyChunk(conn, 0, 0)
+	/*writeEmptyChunk(conn, 0, 0)
 	writeEmptyChunk(conn, 1, 0)
 	writeEmptyChunk(conn, 0, 1)
 	writeEmptyChunk(conn, 1, 1)
@@ -177,9 +177,53 @@ func handleConnection(conn net.Conn) {
 		for z := 0; z < 32; z++ {
 			writeBlockChange(conn, x, 63, z, 80, 0)
 		}
+	}*/
+
+	var chunk bytes.Buffer
+
+	// blocks (n * 8192)
+	// blocklight (n * 2048)
+	// skylight (n * 2048)
+	// biomes (256)
+
+	n := 16
+	total := int32(n*8192 + n*2048 + n*2048 + 256)
+
+	writeByte(&chunk, 0x21)
+	writeInt(&chunk, 0)
+	writeInt(&chunk, 0)
+	writeBool(&chunk, true)
+	writeUnsignedShort(&chunk, 0b1111111111111111)
+	writeVarInt(&chunk, total)
+
+	data := make([]byte, total)
+
+	y := 63
+
+	for x := 0; x < 16; x++ {
+		for z := 0; z < 16; z++ {
+			i := y << 8 | z << 4 | x
+			t := 35
+			d := (x + z)
+			data[2*i] = byte((t << 4) | d)
+			data[2*i+1] = byte(t >> 4)
+		}
 	}
 
+	for i := 0; i < n*2048; i++ {
+		data[n*8192 + i] = 0xFF
+	}
+
+	for i := 0; i < n*2048; i++ {
+		data[n*8192 + n*2048 + i] = 0xFF
+	}
+
+	write(&chunk, data)
+
+	writePacket(conn, chunk.Bytes())
+
 	// TESTING
+
 
 	go func() {
 		for packet := range player.queue {
@@ -188,7 +232,7 @@ func handleConnection(conn net.Conn) {
 	}()
 
 	var joinMessage bytes.Buffer
-	writeChatMessageRaw(&joinMessage, "\u00a78[\u00a7b+\u00a78] \u00a77" + username)
+	writeChatMessageRaw(&joinMessage, "\u00a78[\u00a7b+\u00a78] \u00a77"+username)
 	broadcastPacket(joinMessage.Bytes())
 
 	for {
@@ -270,12 +314,6 @@ func handleConnection(conn net.Conn) {
 			log.Println("ignored", packet)
 		}
 	}
-}
-
-func packetLength(buf []byte, value int32) {
-	buf[0] = byte(value) | 0x80
-	buf[1] = byte(value >> 7) | 0x80
-	buf[2] = byte(value >> 14)
 }
 
 func main() {
